@@ -11,6 +11,9 @@ using Microsoft.Win32;
 //   Setup.exe                설치 창
 //   Setup.exe /S [/D=폴더] [/nomenu] [/desktop]   조용히 설치
 //   Uninstall.exe (= 설치 폴더에 복사된 Setup.exe)   제거
+[assembly: System.Reflection.AssemblyVersion("1.0.5.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.0.5.0")]
+
 namespace NoAdZipSetup
 {
     static class Setup
