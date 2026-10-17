@@ -40,6 +40,11 @@ namespace NoAdZip
             new string[] { "NoAdZip.XFolder", "몽집으로 폴더를 만들어 압축풀기", "/xfolder" },
         };
 
+        // 폴더 창·바탕화면의 빈 공간 우클릭에 나오는 항목 (%V = 지금 보고 있는 폴더)
+        static readonly string[][] BackgroundVerbs = new string[][] {
+            new string[] { "NoAdZip.NewFolder", "새 폴더 만들기", "/newfolder" },
+        };
+
         // 이전 버전(하위 메뉴 방식)이 CommandStore 에 남긴 항목 이름
         static readonly string[] LegacyVerbs = { "NoAdZip.Compress", "NoAdZip.Zip", "NoAdZip.7z", "NoAdZip.Open", "NoAdZip.XHere", "NoAdZip.XFolder", "NoAdZip.XDialog", "NoAdZip.Test" };
 
@@ -74,6 +79,8 @@ namespace NoAdZip
                     foreach (string ext in Engine.AssociableExts)
                         foreach (string[] v in ArchiveVerbs)
                             WriteVerb(cls, @"SystemFileAssociations\" + ext + @"\shell\" + v[0], v, exe, icon);
+                    foreach (string[] v in BackgroundVerbs)
+                        WriteVerb(cls, @"Directory\Background\shell\" + v[0], v, exe, icon, "%V");
                 }
                 Shell.NotifyChanged();
                 Log.Write("우클릭 메뉴 등록");
@@ -82,14 +89,14 @@ namespace NoAdZip
             catch (Exception ex) { return "우클릭 메뉴를 등록할 수 없습니다: " + ex.Message; }
         }
 
-        static void WriteVerb(RegistryKey cls, string path, string[] v, string exe, string icon)
+        static void WriteVerb(RegistryKey cls, string path, string[] v, string exe, string icon, string arg = "%1")
         {
             using (RegistryKey k = cls.CreateSubKey(path))
             {
                 k.SetValue("MUIVerb", v[1]);
                 k.SetValue("Icon", icon);
                 using (RegistryKey c = k.CreateSubKey("command"))
-                    c.SetValue("", "\"" + exe + "\" " + v[2] + " \"%1\"");
+                    c.SetValue("", "\"" + exe + "\" " + v[2] + " \"" + arg + "\"");
             }
         }
 
@@ -129,6 +136,8 @@ namespace NoAdZip
                         foreach (string ext in Engine.AssociableExts)
                             foreach (string[] v in ArchiveVerbs)
                                 cls.DeleteSubKeyTree(@"SystemFileAssociations\" + ext + @"\shell\" + v[0], false);
+                        foreach (string[] v in BackgroundVerbs)
+                            cls.DeleteSubKeyTree(@"Directory\Background\shell\" + v[0], false);
                     }
                 }
                 Shell.NotifyChanged();

@@ -22,6 +22,48 @@ namespace NoAdZip
             SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
         }
 
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        static extern void SHChangeNotify(int eventId, int flags, string item1, IntPtr item2);
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        static extern IntPtr ILCreateFromPath(string path);
+
+        [DllImport("shell32.dll")]
+        static extern void ILFree(IntPtr pidl);
+
+        [DllImport("shell32.dll")]
+        static extern int SHOpenFolderAndSelectItems(IntPtr pidlFolder, uint cidl, IntPtr[] apidl, uint flags);
+
+        /// <summary>
+        /// 탐색기 빈 공간 우클릭 [새 폴더 만들기]: 'dir' 에 "새 폴더"(이미 있으면 "새 폴더 (2)"...)를 만들고
+        /// 탐색기에서 그 폴더를 선택해 바로 이름 바꾸기 상태로 만든다. 만든 경로를 돌려준다.
+        /// </summary>
+        public static string NewFolder(string dir, bool select)
+        {
+            string baseName = Loc.English ? "New folder" : "새 폴더";
+            string path = Path.Combine(dir, baseName);
+            for (int n = 2; Directory.Exists(path) || File.Exists(path); n++)
+                path = Path.Combine(dir, baseName + " (" + n + ")");
+            Directory.CreateDirectory(path);
+            SHChangeNotify(0x00000008, 0x0005, path, IntPtr.Zero);     // SHCNE_MKDIR, SHCNF_PATHW
+            Log.Write("새 폴더: " + path);
+            if (select)
+            {
+                IntPtr folder = ILCreateFromPath(dir), item = ILCreateFromPath(path);
+                try
+                {
+                    if (folder != IntPtr.Zero && item != IntPtr.Zero)
+                        SHOpenFolderAndSelectItems(folder, 1, new IntPtr[] { item }, 0x0001);   // OFASI_EDIT
+                }
+                finally
+                {
+                    if (item != IntPtr.Zero) ILFree(item);
+                    if (folder != IntPtr.Zero) ILFree(folder);
+                }
+            }
+            return path;
+        }
+
         static string ExePath
         {
             get { return System.Reflection.Assembly.GetExecutingAssembly().Location; }

@@ -52,6 +52,7 @@ namespace NoAdZip
             "  /c:<형식> <파일...>               zip 7z tar tar.gz tar.bz2 tar.xz gz bz2 xz 로 바로 압축\r\n" +
             "  /compress <파일...>               압축 창 열기\r\n" +
             "  /czip <파일...>  /c7z <파일...>   바로 압축\r\n" +
+            "  /newfolder <폴더>                 폴더 안에 '새 폴더' 만들기\r\n" +
             "  /silent                           창 없이 실행 (자동화용, 종료코드 0=성공)\r\n" +
             "  /force                            /silent 에서 위험 확인을 모두 '예'로 처리";
 
@@ -73,7 +74,7 @@ namespace NoAdZip
                 if (low.StartsWith("/c:")) { r.Verb = "cfmt"; r.Fmt = low.Substring(3); continue; }
                 if (low.StartsWith("/only:")) { r.Only.Add(a.Substring(6)); continue; }
                 if (low == "/x" || low == "/xhere" || low == "/xfolder" || low == "/xdialog" || low == "/test"
-                    || low == "/compress" || low == "/czip" || low == "/c7z" || low == "/open" || low == "/dlg" || low == "/regmenu" || low == "/unregmenu" || low == "/unregall")
+                    || low == "/compress" || low == "/czip" || low == "/c7z" || low == "/open" || low == "/dlg" || low == "/regmenu" || low == "/unregmenu" || low == "/newfolder" || low == "/unregall")
                 {
                     r.Verb = low.Substring(1);
                     continue;
@@ -225,6 +226,17 @@ namespace NoAdZip
                     }
                 case "dlg":
                     return RenderDialog(files);
+                case "newfolder":
+                    {
+                        if (files.Count == 0 || !Directory.Exists(files[0])) { Msg.Error(null, "새 폴더를 만들 위치를 찾을 수 없습니다."); return 1; }
+                        try
+                        {
+                            string made = Shell.NewFolder(files[0], !Msg.Silent);
+                            if (Msg.Silent) Console.WriteLine(made);
+                            return 0;
+                        }
+                        catch (Exception ex) { Msg.Error(null, "새 폴더를 만들 수 없습니다: " + ex.Message); return 1; }
+                    }
                 case "regmenu":
                     {
                         string err = ShellMenu.Register();
