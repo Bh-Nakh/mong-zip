@@ -11,8 +11,8 @@ using Microsoft.Win32;
 //   Setup.exe                설치 창
 //   Setup.exe /S [/D=폴더] [/nomenu] [/desktop]   조용히 설치
 //   Uninstall.exe (= 설치 폴더에 복사된 Setup.exe)   제거
-[assembly: System.Reflection.AssemblyVersion("1.1.1.0")]
-[assembly: System.Reflection.AssemblyFileVersion("1.1.1.0")]
+[assembly: System.Reflection.AssemblyVersion("1.1.2.0")]
+[assembly: System.Reflection.AssemblyFileVersion("1.1.2.0")]
 
 namespace NoAdZipSetup
 {
@@ -22,7 +22,7 @@ namespace NoAdZipSetup
         const string AppExe = "몽집.exe";
         const string LegacyName = "NoAdZip";        // 이름이 바뀌기 전(옛 버전) 설치본의 이름
         const string LegacyExe = "NoAdZip.exe";
-        const string Version = "1.1.1";
+        const string Version = "1.1.2";
         static readonly string[] Payload = { AppExe, "7z.exe", "7z.dll", "7zip-License.txt" };
 
         // 시험용: NOADZIP_REGTEST 를 주면 제거 목록 키를 그 아래에, NOADZIP_STARTMENU 를 주면 시작 메뉴를 그 폴더에 만든다.

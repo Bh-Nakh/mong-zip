@@ -34,9 +34,37 @@ namespace NoAdZip
         [DllImport("shell32.dll")]
         static extern int SHOpenFolderAndSelectItems(IntPtr pidlFolder, uint cidl, IntPtr[] apidl, uint flags);
 
+        [StructLayout(LayoutKind.Sequential)]
+        struct PROCESS_BASIC_INFORMATION { public IntPtr ExitStatus, PebBaseAddress, AffinityMask, BasePriority, UniqueProcessId, InheritedFromUniqueProcessId; }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct COPYDATASTRUCT { public IntPtr dwData; public int cbData; public IntPtr lpData; }
+
+        delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr lParam);
+
+        [DllImport("ntdll.dll")]
+        static extern int NtQueryInformationProcess(IntPtr process, int infoClass, ref PROCESS_BASIC_INFORMATION info, int size, out int returned);
+
+        [DllImport("user32.dll")]
+        static extern bool EnumWindows(EnumWindowsProc proc, IntPtr lParam);
+
+        [DllImport("user32.dll")]
+        static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);
+
+        [DllImport("user32.dll")]
+        static extern bool IsWindowVisible(IntPtr hwnd);
+
+        [DllImport("user32.dll")]
+        static extern IntPtr SendMessageTimeout(IntPtr hwnd, int msg, IntPtr wParam, ref COPYDATASTRUCT lParam, int flags, int timeout, out IntPtr result);
+
+        // 우클릭 메뉴를 띄운 프로그램에 만든 폴더를 알리는 WM_COPYDATA 표지 (몽탐색기가 받아 이름 바꾸기 상태로 둔다)
+        const int NewFolderCopyData = 0x4D4E4644;   // 'MNFD'
+
         /// <summary>
         /// 탐색기 빈 공간 우클릭 [새 폴더 만들기]: 'dir' 에 "새 폴더"(이미 있으면 "새 폴더 (2)"...)를 만들고
-        /// 탐색기에서 그 폴더를 선택해 바로 이름 바꾸기 상태로 만든다. 만든 경로를 돌려준다.
+        /// 바로 이름 바꾸기 상태로 만든다. 만든 경로를 돌려준다.
+        /// 윈도우 탐색기가 실행했으면 탐색기에 선택을 맡기고, 다른 프로그램(몽탐색기·파일 대화상자 등)이 실행했으면
+        /// 탐색기 창을 새로 띄우지 않고 그 프로그램 창에 경로만 알린다.
         /// </summary>
         public static string NewFolder(string dir, bool select)
         {
@@ -46,22 +74,80 @@ namespace NoAdZip
                 path = Path.Combine(dir, baseName + " (" + n + ")");
             Directory.CreateDirectory(path);
             SHChangeNotify(0x00000008, 0x0005, path, IntPtr.Zero);     // SHCNE_MKDIR, SHCNF_PATHW
-            Log.Write("새 폴더: " + path);
+            int host = ParentProcessId();
+            bool explorer = IsExplorer(host);
+            Log.Write("새 폴더: " + path + " (실행한 프로그램 " + host + (explorer ? ", 탐색기" : "") + ")");
             if (select)
             {
-                IntPtr folder = ILCreateFromPath(dir), item = ILCreateFromPath(path);
-                try
-                {
-                    if (folder != IntPtr.Zero && item != IntPtr.Zero)
-                        SHOpenFolderAndSelectItems(folder, 1, new IntPtr[] { item }, 0x0001);   // OFASI_EDIT
-                }
-                finally
-                {
-                    if (item != IntPtr.Zero) ILFree(item);
-                    if (folder != IntPtr.Zero) ILFree(folder);
-                }
+                if (explorer) SelectInExplorer(dir, path);
+                else TellHost(host, path);
             }
             return path;
+        }
+
+        static void SelectInExplorer(string dir, string path)
+        {
+            IntPtr folder = ILCreateFromPath(dir), item = ILCreateFromPath(path);
+            try
+            {
+                if (folder != IntPtr.Zero && item != IntPtr.Zero)
+                    SHOpenFolderAndSelectItems(folder, 1, new IntPtr[] { item }, 0x0001);   // OFASI_EDIT
+            }
+            finally
+            {
+                if (item != IntPtr.Zero) ILFree(item);
+                if (folder != IntPtr.Zero) ILFree(folder);
+            }
+        }
+
+        static int ParentProcessId()
+        {
+            try
+            {
+                var pbi = new PROCESS_BASIC_INFORMATION();
+                int len;
+                using (var me = System.Diagnostics.Process.GetCurrentProcess())
+                    if (NtQueryInformationProcess(me.Handle, 0, ref pbi, Marshal.SizeOf(pbi), out len) == 0)
+                        return (int)(long)pbi.InheritedFromUniqueProcessId;
+            }
+            catch { }
+            return 0;
+        }
+
+        static bool IsExplorer(int pid)
+        {
+            if (pid <= 0) return false;
+            try
+            {
+                using (var p = System.Diagnostics.Process.GetProcessById(pid))
+                    return string.Equals(p.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase);
+            }
+            catch { return false; }
+        }
+
+        /// <summary>프로그램 pid 의 보이는 최상위 창들에 만든 폴더 경로를 WM_COPYDATA 로 보낸다</summary>
+        static void TellHost(int pid, string path)
+        {
+            if (pid <= 0) return;
+            byte[] data = System.Text.Encoding.Unicode.GetBytes(path + "\0");
+            IntPtr buf = Marshal.AllocHGlobal(data.Length);
+            try
+            {
+                Marshal.Copy(data, 0, buf, data.Length);
+                var cds = new COPYDATASTRUCT { dwData = (IntPtr)NewFolderCopyData, cbData = data.Length, lpData = buf };
+                EnumWindows(delegate (IntPtr h, IntPtr l)
+                {
+                    uint wpid;
+                    GetWindowThreadProcessId(h, out wpid);
+                    if (wpid == pid && IsWindowVisible(h))
+                    {
+                        IntPtr r;
+                        SendMessageTimeout(h, 0x004A /* WM_COPYDATA */, IntPtr.Zero, ref cds, 0x0002 /* SMTO_ABORTIFHUNG */, 2000, out r);
+                    }
+                    return true;
+                }, IntPtr.Zero);
+            }
+            finally { Marshal.FreeHGlobal(buf); }
         }
 
         static string ExePath
