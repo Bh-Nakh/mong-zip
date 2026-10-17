@@ -45,6 +45,9 @@ namespace NoAdZip
             new string[] { "NoAdZip.NewFolder", "새 폴더 만들기", "/newfolder" },
         };
 
+        // 우클릭 메뉴 맨 위에 올릴 항목 (레지스트리 Position=Top)
+        static readonly string[] TopVerbs = { "NoAdZip.NewFolder" };
+
         // 이전 버전(하위 메뉴 방식)이 CommandStore 에 남긴 항목 이름
         static readonly string[] LegacyVerbs = { "NoAdZip.Compress", "NoAdZip.Zip", "NoAdZip.7z", "NoAdZip.Open", "NoAdZip.XHere", "NoAdZip.XFolder", "NoAdZip.XDialog", "NoAdZip.Test" };
 
@@ -95,6 +98,7 @@ namespace NoAdZip
             {
                 k.SetValue("MUIVerb", v[1]);
                 k.SetValue("Icon", icon);
+                if (Array.IndexOf(TopVerbs, v[0]) >= 0) k.SetValue("Position", "Top");
                 using (RegistryKey c = k.CreateSubKey("command"))
                     c.SetValue("", "\"" + exe + "\" " + v[2] + " \"" + arg + "\"");
             }
