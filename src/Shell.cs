@@ -68,6 +68,7 @@ namespace NoAdZip
         /// </summary>
         public static string NewFolder(string dir, bool select)
         {
+            IntPtr top = ViewRename.HostWindow();      // 폴더를 만들기 전에 우클릭한 창을 기억한다
             string baseName = Loc.English ? "New folder" : "새 폴더";
             string path = Path.Combine(dir, baseName);
             for (int n = 2; Directory.Exists(path) || File.Exists(path); n++)
@@ -79,8 +80,11 @@ namespace NoAdZip
             Log.Write("새 폴더: " + path + " (실행한 프로그램 " + host + (explorer ? ", 탐색기" : "") + ")");
             if (select)
             {
-                if (explorer) SelectInExplorer(dir, path);
-                else TellHost(host, path);
+                // 몽탐색기는 알림을 받아 직접 처리한다. 그 밖의 창(탐색기·바탕화면·다른 프로그램의 대화상자)은
+                // 우클릭한 창의 파일 목록에서 새 폴더를 골라 이름 바꾸기 상태로 만든다.
+                int owner = top == IntPtr.Zero ? 0 : ViewRename.ProcessOf(top);
+                if (IsProcess(owner, "몽탐색기")) TellHost(owner, path);
+                else if (!ViewRename.Rename(top, Path.GetFileName(path), 5000) && explorer) SelectInExplorer(dir, path);
             }
             return path;
         }
@@ -116,11 +120,16 @@ namespace NoAdZip
 
         static bool IsExplorer(int pid)
         {
+            return IsProcess(pid, "explorer");
+        }
+
+        static bool IsProcess(int pid, string name)
+        {
             if (pid <= 0) return false;
             try
             {
                 using (var p = System.Diagnostics.Process.GetProcessById(pid))
-                    return string.Equals(p.ProcessName, "explorer", StringComparison.OrdinalIgnoreCase);
+                    return string.Equals(p.ProcessName, name, StringComparison.OrdinalIgnoreCase);
             }
             catch { return false; }
         }

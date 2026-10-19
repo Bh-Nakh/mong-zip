@@ -24,9 +24,13 @@ if not exist res\app.ico (
   del "%OUT%\MakeIcon.exe"
 )
 
+rem Locked (running) files are renamed to .old instead of asking the user to close the app (common tool tools\free_locked.ps1)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0tools\free_locked.ps1" "%OUT%" "%APPNAME%.exe" 7z.exe 7z.dll
+
 "%CSC%" /nologo /target:winexe /optimize+ /platform:anycpu /codepage:65001 ^
   /win32icon:res\app.ico /win32manifest:res\app.manifest ^
   /r:System.dll /r:System.Core.dll /r:System.Drawing.dll /r:System.Windows.Forms.dll ^
+  /lib:"%FW%\WPF" /r:UIAutomationClient.dll /r:UIAutomationTypes.dll /r:WindowsBase.dll ^
   /out:"%OUT%\%APPNAME%.exe" src\*.cs
 if errorlevel 1 (
   echo BUILD FAILED
