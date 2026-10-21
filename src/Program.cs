@@ -67,6 +67,8 @@ namespace NoAdZip
             for (int i = 0; i < args.Length; i++)
             {
                 string a = args[i];
+                // 드라이브 맨 위는 탐색기가 "J:\" 로 넘기는데, 끝의 \" 가 따옴표로 읽혀 J:" 가 된다 → J:\ 로 되돌린다
+                if (a.Length >= 2 && a.EndsWith("\"")) a = a.Substring(0, a.Length - 1) + "\\";
                 string low = a.ToLowerInvariant();
                 if (low == "/silent" || low == "--silent" || low == "/force" || low == "--force" || low == "/nofocus") continue;
                 if (low == "/?" || low == "--help" || low == "-h") { r.Verb = "help"; continue; }
