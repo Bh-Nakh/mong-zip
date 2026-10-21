@@ -5,5 +5,5 @@ using System.Reflection;
 [assembly: AssemblyTitle("몽집")]
 [assembly: AssemblyProduct("몽집")]
 [assembly: AssemblyDescription("광고 없는 압축 프로그램")]
-[assembly: AssemblyVersion("1.1.4.0")]
-[assembly: AssemblyFileVersion("1.1.4.0")]
+[assembly: AssemblyVersion("1.1.5.0")]
+[assembly: AssemblyFileVersion("1.1.5.0")]

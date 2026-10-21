@@ -57,14 +57,14 @@ namespace NoAdZip
         [DllImport("user32.dll")]
         static extern IntPtr SendMessageTimeout(IntPtr hwnd, int msg, IntPtr wParam, ref COPYDATASTRUCT lParam, int flags, int timeout, out IntPtr result);
 
-        // 우클릭 메뉴를 띄운 프로그램에 만든 폴더를 알리는 WM_COPYDATA 표지 (몽탐색기가 받아 이름 바꾸기 상태로 둔다)
+        // 우클릭 메뉴를 띄운 프로그램에 만든 폴더를 알리는 WM_COPYDATA 표지 (몽탐색기가 받아 그 칸에서 선택한다)
         const int NewFolderCopyData = 0x4D4E4644;   // 'MNFD'
 
         /// <summary>
         /// 탐색기 빈 공간 우클릭 [새 폴더 만들기]: 'dir' 에 "새 폴더"(이미 있으면 "새 폴더 (2)"...)를 만들고
         /// 바로 이름 바꾸기 상태로 만든다. 만든 경로를 돌려준다.
-        /// 윈도우 탐색기가 실행했으면 탐색기에 선택을 맡기고, 다른 프로그램(몽탐색기·파일 대화상자 등)이 실행했으면
-        /// 탐색기 창을 새로 띄우지 않고 그 프로그램 창에 경로만 알린다.
+        /// 우클릭한 창(탐색기·바탕화면·몽탐색기·파일 대화상자 등)의 파일 목록에서 직접 골라 이름 바꾸기를 시작하고,
+        /// 그래도 안 되면 몽탐색기에는 경로를 알리고, 탐색기에는 선택을 맡긴다.
         /// </summary>
         public static string NewFolder(string dir, bool select)
         {
@@ -80,11 +80,14 @@ namespace NoAdZip
             Log.Write("새 폴더: " + path + " (실행한 프로그램 " + host + (explorer ? ", 탐색기" : "") + ")");
             if (select)
             {
-                // 몽탐색기는 알림을 받아 직접 처리한다. 그 밖의 창(탐색기·바탕화면·다른 프로그램의 대화상자)은
-                // 우클릭한 창의 파일 목록에서 새 폴더를 골라 이름 바꾸기 상태로 만든다.
+                // 우클릭한 창의 파일 목록에서 새 폴더를 골라 이름 바꾸기 상태로 만든다 (몽탐색기도 같은 방식:
+                // 몽탐색기 자체 처리는 선택만 되고 이름 바꾸기가 시작되지 않는다). 실패하면 예전 방식으로 넘긴다.
                 int owner = top == IntPtr.Zero ? 0 : ViewRename.ProcessOf(top);
-                if (IsProcess(owner, "몽탐색기")) TellHost(owner, path);
-                else if (!ViewRename.Rename(top, Path.GetFileName(path), 5000) && explorer) SelectInExplorer(dir, path);
+                if (!ViewRename.Rename(top, Path.GetFileName(path), 5000))
+                {
+                    if (IsProcess(owner, "몽탐색기")) TellHost(owner, path);
+                    else if (explorer) SelectInExplorer(dir, path);
+                }
             }
             return path;
         }

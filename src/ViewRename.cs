@@ -5,7 +5,7 @@ using System.Windows.Automation;
 
 namespace NoAdZip
 {
-    // 우클릭 [새 폴더 만들기] 뒤, 우클릭한 창(탐색기·바탕화면·다른 프로그램의 폴더 선택/파일 대화상자)의 파일 목록에서
+    // 우클릭 [새 폴더 만들기] 뒤, 우클릭한 창(탐색기·바탕화면·몽탐색기·다른 프로그램의 폴더 선택/파일 대화상자)의 파일 목록에서
     // 만든 폴더를 찾아 선택하고 F2 를 보내 이름 바꾸기 상태로 만든다. 창을 앞으로 가져오거나 마우스를 움직이지 않는다.
     static class ViewRename
     {
@@ -45,75 +45,91 @@ namespace NoAdZip
             return sb.ToString();
         }
 
-        /// <summary>창 안의 보이는 파일 목록(SHELLDLL_DefView). 바탕화면이면 Progman/WorkerW 아래에서 찾는다.</summary>
-        static IntPtr FindDefView(IntPtr top)
+        [StructLayout(LayoutKind.Sequential)]
+        struct GUITHREADINFO { public int cbSize, flags; public IntPtr hwndActive, hwndFocus, hwndCapture, hwndMenuOwner, hwndMoveSize, hwndCaret; public int l, t, r, b; }
+        [DllImport("user32.dll")] static extern bool GetGUIThreadInfo(uint thread, ref GUITHREADINFO info);
+        [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hwnd);
+
+        /// <summary>
+        /// 창 안의 보이는 파일 목록(SHELLDLL_DefView)들. 키보드 포커스가 있는(우클릭한) 목록을 맨 앞에 둔다
+        /// (몽탐색기처럼 칸이 여러 개인 창). 바탕화면이면 Progman/WorkerW 아래에서 찾는다.
+        /// </summary>
+        static System.Collections.Generic.List<IntPtr> FindDefViews(IntPtr top)
         {
-            IntPtr found = IntPtr.Zero;
-            EnumProc look = delegate (IntPtr h, IntPtr l)
-            {
-                if (ClassOf(h) == "SHELLDLL_DefView" && IsWindowVisible(h)) { found = h; return false; }
-                return true;
-            };
-            if (top != IntPtr.Zero) EnumChildWindows(top, look, IntPtr.Zero);
-            if (found != IntPtr.Zero) return found;
+            var all = new System.Collections.Generic.List<IntPtr>();
+            if (top != IntPtr.Zero)
+                EnumChildWindows(top, delegate (IntPtr h, IntPtr l)
+                {
+                    if (ClassOf(h) == "SHELLDLL_DefView" && IsWindowVisible(h)) all.Add(h);
+                    return true;
+                }, IntPtr.Zero);
             string c = top == IntPtr.Zero ? "" : ClassOf(top);
-            if (c == "Progman" || c == "WorkerW")
+            if (all.Count == 0 && (c == "Progman" || c == "WorkerW"))
             {
                 EnumWindows(delegate (IntPtr w, IntPtr l)
                 {
                     string wc = ClassOf(w);
                     if (wc != "Progman" && wc != "WorkerW") return true;
                     IntPtr dv = FindWindowEx(w, IntPtr.Zero, "SHELLDLL_DefView", null);
-                    if (dv != IntPtr.Zero) { found = dv; return false; }
+                    if (dv != IntPtr.Zero) { all.Add(dv); return false; }
                     return true;
                 }, IntPtr.Zero);
             }
-            return found;
+            uint pid;
+            GUITHREADINFO gi = new GUITHREADINFO();
+            gi.cbSize = Marshal.SizeOf(gi);
+            if (all.Count > 1 && GetGUIThreadInfo(GetWindowThreadProcessId(top, out pid), ref gi))
+                for (IntPtr h = gi.hwndFocus; h != IntPtr.Zero; h = GetParent(h))
+                    if (all.Remove(h)) { all.Insert(0, h); break; }
+            return all;
         }
 
         /// <summary>top 창의 파일 목록에서 name 항목을 선택하고 이름 바꾸기 상태로 만든다. 목록을 못 찾거나 항목이 끝내 안 보이면 false.</summary>
         public static bool Rename(IntPtr top, string name, int waitMs)
         {
-            IntPtr defView = FindDefView(top);
-            if (defView == IntPtr.Zero) { Log.Write("새 폴더: 파일 목록을 찾지 못함 (" + (top == IntPtr.Zero ? "창 없음" : ClassOf(top)) + ")"); return false; }
-            IntPtr itemsWnd = FindWindowEx(defView, IntPtr.Zero, null, null);   // DirectUIHWND(탐색기·대화상자) 또는 SysListView32(바탕화면)
-            if (itemsWnd == IntPtr.Zero) itemsWnd = defView;
+            var views = FindDefViews(top);
+            if (views.Count == 0) { Log.Write("새 폴더: 파일 목록을 찾지 못함 (" + (top == IntPtr.Zero ? "창 없음" : ClassOf(top)) + ")"); return false; }
+            var lists = new AutomationElement[views.Count];
             DateTime start = DateTime.Now, until = start.AddMilliseconds(waitMs);
             int tries = 0;
-            AutomationElement list = null;
             while (true)
             {
                 tries++;
-                try
+                for (int v = 0; v < views.Count; v++)
                 {
-                    // 파일 목록(List)은 한 번만 찾아 두고, 새 폴더가 목록에 나타날 때까지 이름으로 묻는다
-                    if (list == null) list = AutomationElement.FromHandle(defView).FindFirst(TreeScope.Descendants,
-                        new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.List));
-                    AutomationElement item = list == null ? null : FindItem(list, name);
-                    if (item != null)
+                    IntPtr itemsWnd = FindWindowEx(views[v], IntPtr.Zero, null, null);   // DirectUIHWND(탐색기·대화상자) 또는 SysListView32(바탕화면)
+                    if (itemsWnd == IntPtr.Zero) itemsWnd = views[v];
+                    try
                     {
-                        object p;
-                        if (item.TryGetCurrentPattern(SelectionItemPattern.Pattern, out p)) ((SelectionItemPattern)p).Select();
-                        if (item.TryGetCurrentPattern(ScrollItemPattern.Pattern, out p)) { try { ((ScrollItemPattern)p).ScrollIntoView(); } catch { } }
-                        // 메시지 대기열로 보내야 목록 창의 단축키 처리(F2 = 이름 바꾸기)를 거친다
-                        PostMessage(itemsWnd, 0x0100 /* WM_KEYDOWN */, (IntPtr)0x71 /* VK_F2 */, (IntPtr)0x003C0001);
-                        PostMessage(itemsWnd, 0x0101 /* WM_KEYUP */, (IntPtr)0x71, unchecked((IntPtr)(int)0xC03C0001));
-                        Log.Write("새 폴더: 이름 바꾸기 상태로 둠 (" + ClassOf(top) + ", " + (int)(DateTime.Now - start).TotalMilliseconds + "ms, " + tries + "회)");
-                        return true;
+                        // 파일 목록(List)은 한 번만 찾아 두고, 새 폴더가 목록에 나타날 때까지 이름으로 묻는다
+                        if (lists[v] == null) lists[v] = AutomationElement.FromHandle(views[v]).FindFirst(TreeScope.Descendants,
+                            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.List));
+                        AutomationElement item = lists[v] == null ? null : FindItem(lists[v], name);
+                        if (item != null)
+                        {
+                            object p;
+                            if (item.TryGetCurrentPattern(SelectionItemPattern.Pattern, out p)) ((SelectionItemPattern)p).Select();
+                            if (item.TryGetCurrentPattern(ScrollItemPattern.Pattern, out p)) { try { ((ScrollItemPattern)p).ScrollIntoView(); } catch { } }
+                            // 메시지 대기열로 보내야 목록 창의 단축키 처리(F2 = 이름 바꾸기)를 거친다
+                            PostMessage(itemsWnd, 0x0100 /* WM_KEYDOWN */, (IntPtr)0x71 /* VK_F2 */, (IntPtr)0x003C0001);
+                            PostMessage(itemsWnd, 0x0101 /* WM_KEYUP */, (IntPtr)0x71, unchecked((IntPtr)(int)0xC03C0001));
+                            Log.Write("새 폴더: 이름 바꾸기 상태로 둠 (" + ClassOf(top) + ", 목록 " + (v + 1) + "/" + views.Count + ", " + (int)(DateTime.Now - start).TotalMilliseconds + "ms, " + tries + "회)");
+                            return true;
+                        }
+                    }
+                    catch (ElementNotAvailableException) { lists[v] = null; }
+                    catch (Exception ex) { Log.Write("새 폴더: 목록 접근 오류 " + ex.Message); return false; }
+                    // 파일 대화상자는 새 폴더를 목록에 늦게 반영하므로, 처음에 없으면 새로 고침(F5)을 한 번 보낸다
+                    if (tries == 1 && views.Count == 1)
+                    {
+                        PostMessage(itemsWnd, 0x0100 /* WM_KEYDOWN */, (IntPtr)0x74 /* VK_F5 */, (IntPtr)0x003F0001);
+                        PostMessage(itemsWnd, 0x0101 /* WM_KEYUP */, (IntPtr)0x74, unchecked((IntPtr)(int)0xC03F0001));
                     }
                 }
-                catch (ElementNotAvailableException) { list = null; }
-                catch (Exception ex) { Log.Write("새 폴더: 목록 접근 오류 " + ex.Message); return false; }
                 if (DateTime.Now > until) break;
-                // 파일 대화상자는 새 폴더를 목록에 늦게 반영하므로, 처음에 없으면 새로 고침(F5)을 한 번 보낸다
-                if (tries == 1)
-                {
-                    PostMessage(itemsWnd, 0x0100 /* WM_KEYDOWN */, (IntPtr)0x74 /* VK_F5 */, (IntPtr)0x003F0001);
-                    PostMessage(itemsWnd, 0x0101 /* WM_KEYUP */, (IntPtr)0x74, unchecked((IntPtr)(int)0xC03F0001));
-                }
                 System.Threading.Thread.Sleep(50);
             }
-            Log.Write("새 폴더: 목록에서 항목을 찾지 못함 " + name + " (" + (list == null ? "목록 없음" : "항목 없음") + ")");
+            Log.Write("새 폴더: 목록에서 항목을 찾지 못함 " + name + " (목록 " + views.Count + "개)");
             return false;
         }
 
